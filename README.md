@@ -45,6 +45,7 @@ Enterprise distributions, commercial support and training are available from [F5
 - [Contributing code](#contributing-code)
 - [Additional help and resources](#additional-help-and-resources)
 - [Changelog](#changelog)
+- [DevelopmentGuide](#developmentguide)
 - [CodeStyle](#codestyle)
 - [License](#license)
 
@@ -225,6 +226,9 @@ Please see the [Contributing](CONTRIBUTING.md) guide for information on how to c
 
 # Changelog
 See our [changelog](https://nginx.org/en/CHANGES) to keep track of updates.
+
+# DevelopmentGuide
+see our [developmentguide](https://nginx.org/en/docs/dev/development_guide.html)
 
 # CodeStyle
 see our [codestyle](https://nginx.org/en/docs/dev/development_guide.html#code_style)
