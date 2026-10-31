@@ -1,0 +1,18 @@
+flowchart TD
+    A[TCP accept] --> B[ngx_http_init_connection]
+    B --> C[ngx_http_wait_request_handler]
+    C --> D[ngx_http_process_request_line]
+    D --> E[ngx_http_process_request_uri]
+    E --> F[ngx_http_process_request_headers]
+    F --> G[ngx_http_process_request_header<br/>require Host for HTTP/1.1]
+    G --> H[Virtual server selection by Host]
+    H --> I[ngx_http_process_request → ngx_http_handler]
+    I --> J[Phase engine: POST_READ ... CONTENT ... LOG]
+    J --> K[CONTENT phase handler<br/>static / proxy / fastcgi]
+    K --> L[ngx_http_send_header → header filter chain]
+    L --> M[ngx_http_output_filter → body filter chain]
+    M --> N[ngx_http_write_filter → socket]
+    N --> O[ngx_http_finalize_request]
+    O --> P{keepalive?}
+    P -- yes --> C
+    P -- no --> Q[ngx_http_close_request]

@@ -1,0 +1,34 @@
+flowchart LR
+    subgraph LINK[Link order in ngx_modules.c]
+      direction TB
+      L1[write_filter #1]
+      L2[header_filter #2]
+      L3[chunked_filter #3]
+      L4[range_header_filter #4]
+      L5[gzip_filter #5]
+      L6[postpone_filter #6]
+      L7[ssi_filter #7]
+      L8[charset_filter #8]
+      L9[userid_filter #9]
+      L10[headers_filter #10]
+      L11[copy_filter #11]
+      L12[range_body_filter #12]
+      L13[not_modified_filter #13]
+    end
+    subgraph EXEC[Execution order top → bottom]
+      direction TB
+      E1[not_modified TOP - runs 1st]
+      E2[range_body]
+      E3[copy]
+      E4[headers/trailers]
+      E5[userid]
+      E6[charset]
+      E7[ssi]
+      E8[postpone]
+      E9[gzip]
+      E10[range_header]
+      E11[chunked]
+      E12[header - serialize]
+      E13[write - send to socket, runs last]
+    end
+    LINK -->|reverse| EXEC

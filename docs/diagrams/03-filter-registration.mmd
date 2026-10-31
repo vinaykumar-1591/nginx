@@ -1,0 +1,7 @@
+flowchart LR
+    subgraph REG[postconfiguration runs in module array order]
+      direction TB
+      A1[write registers: next=top; top=write] --> A2[header registers: next=top; top=header]
+      A2 --> A3[chunked registers ...] --> A4[... not_modified registers last]
+    end
+    REG --> RESULT[LAST to register = FIRST to execute<br/>it is a prepend/stack]

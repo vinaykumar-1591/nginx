@@ -1,0 +1,14 @@
+flowchart TD
+    A[CONTENT phase: ngx_http_proxy_handler<br/>register callbacks + filters] --> B[read client body]
+    B --> C[ngx_http_upstream_init → init_request<br/>create_request builds backend request; pick peer]
+    C --> D[ngx_http_upstream_connect<br/>non-blocking connect; set read/write handlers]
+    D -->|writable| E[ngx_http_upstream_send_request<br/>write request_bufs to backend]
+    E -->|readable| F[ngx_http_upstream_process_header<br/>proxy_process_status_line → proxy_process_header]
+    F --> G[ngx_http_upstream_process_headers<br/>map backend headers → r->headers_out]
+    G --> H[ngx_http_upstream_send_response<br/>ngx_http_send_header → OUTPUT FILTER CHAIN]
+    H --> I{u->buffering?}
+    I -- off --> J[non_buffered pump<br/>u->input_filter → ngx_http_output_filter]
+    I -- on --> K[event pipe<br/>p->input_filter → p->output_filter → ngx_http_output_filter]
+    J --> L[ngx_http_upstream_finalize_request]
+    K --> L
+    L --> M[ngx_http_finalize_request<br/>keepalive/close]
