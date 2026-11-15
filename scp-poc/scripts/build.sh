@@ -15,6 +15,7 @@ mkdir -p "$BUILD_DIR"
 ./auto/configure \
     --builddir="$BUILD_DIR" \
     --with-http_v2_module \
+    --with-http_auth_request_module \
     --with-debug \
     --without-http_rewrite_module \
     --without-http_gzip_module \
@@ -23,9 +24,10 @@ mkdir -p "$BUILD_DIR"
 echo ">> building nginx"
 make -f "$BUILD_DIR/Makefile"
 
-echo ">> building mock NF (Go h2c)"
-( cd scp-poc/harness && go build -o "$BUILD_DIR/mock-nf" nf.go )
+echo ">> building mock NF + mock NRF (Go)"
+( cd scp-poc/harness && go build -o "$BUILD_DIR/mock-nf" nf.go && go build -o "$BUILD_DIR/mock-nrf" nrf.go )
 
 echo ">> done:"
-echo "   nginx   : $BUILD_DIR/nginx"
-echo "   mock-nf : $BUILD_DIR/mock-nf"
+echo "   nginx    : $BUILD_DIR/nginx"
+echo "   mock-nf  : $BUILD_DIR/mock-nf"
+echo "   mock-nrf : $BUILD_DIR/mock-nrf"

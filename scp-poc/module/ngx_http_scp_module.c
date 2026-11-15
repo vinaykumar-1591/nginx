@@ -26,11 +26,15 @@
 #define NGX_HTTP_SCP_TARGET_HEADER      "3gpp-Sbi-Target-apiRoot"
 #define NGX_HTTP_SCP_TARGET_HEADER_LEN  (sizeof(NGX_HTTP_SCP_TARGET_HEADER) - 1)
 
+#define NGX_HTTP_SCP_DISC_HEADER        "3gpp-Sbi-Discovery-target-nf-type"
+#define NGX_HTTP_SCP_DISC_HEADER_LEN    (sizeof(NGX_HTTP_SCP_DISC_HEADER) - 1)
+
 
 typedef struct {
     ngx_flag_t   enable;
     ngx_flag_t   require_oauth;
     ngx_flag_t   require_target;
+    ngx_flag_t   delegated_discovery;
 } ngx_http_scp_loc_conf_t;
 
 
@@ -65,7 +69,8 @@ enum {
     NGX_HTTP_SCP_VAR_BACKEND = 0,
     NGX_HTTP_SCP_VAR_AUTHORITY,
     NGX_HTTP_SCP_VAR_SCHEME,
-    NGX_HTTP_SCP_VAR_HAS_TOKEN
+    NGX_HTTP_SCP_VAR_HAS_TOKEN,
+    NGX_HTTP_SCP_VAR_DISCOVERY_NF_TYPE
 };
 
 
@@ -92,6 +97,13 @@ static ngx_command_t  ngx_http_scp_commands[] = {
       offsetof(ngx_http_scp_loc_conf_t, require_target),
       NULL },
 
+    { ngx_string("scp_delegated_discovery"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_scp_loc_conf_t, delegated_discovery),
+      NULL },
+
       ngx_null_command
 };
 
@@ -109,6 +121,9 @@ static ngx_http_variable_t  ngx_http_scp_vars[] = {
 
     { ngx_string("scp_has_token"), NULL, ngx_http_scp_variable,
       NGX_HTTP_SCP_VAR_HAS_TOKEN, 0, 0 },
+
+    { ngx_string("scp_discovery_nf_type"), NULL, ngx_http_scp_variable,
+      NGX_HTTP_SCP_VAR_DISCOVERY_NF_TYPE, 0, 0 },
 
       ngx_http_null_variable
 };
@@ -149,6 +164,7 @@ static ngx_int_t
 ngx_http_scp_handler(ngx_http_request_t *r)
 {
     ngx_http_scp_ctx_t       *ctx;
+    ngx_table_elt_t          *nf_type;
     ngx_http_scp_loc_conf_t  *slcf;
 
     slcf = ngx_http_get_module_loc_conf(r, ngx_http_scp_module);
@@ -162,15 +178,7 @@ ngx_http_scp_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    if (slcf->require_target && !ctx->valid) {
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "scp: missing or malformed %s header",
-                      NGX_HTTP_SCP_TARGET_HEADER);
-
-        return ngx_http_scp_problem(r, NGX_HTTP_BAD_REQUEST, "Bad Request",
-                      "MANDATORY_IE_MISSING",
-                      "3gpp-Sbi-Target-apiRoot header is missing or malformed");
-    }
+    /* OAuth2 authorization applies to both direct and delegated modes */
 
     if (slcf->require_oauth && !ngx_http_scp_has_bearer(r)) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
@@ -182,9 +190,40 @@ ngx_http_scp_handler(ngx_http_request_t *r)
     }
 
     if (ctx->valid) {
+        /* direct routing: consumer supplied 3gpp-Sbi-Target-apiRoot */
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "scp: route apiRoot=%V://%V backend=%V uri=%V",
                       &ctx->scheme, &ctx->authority, &ctx->host, &r->uri);
+
+        return NGX_DECLINED;
+    }
+
+    /* no target apiRoot: fall back to delegated (NRF) discovery if enabled
+     * and the consumer provided a discovery target NF type */
+
+    if (slcf->delegated_discovery) {
+        nf_type = ngx_http_scp_find_header(r,
+                      (u_char *) NGX_HTTP_SCP_DISC_HEADER,
+                      NGX_HTTP_SCP_DISC_HEADER_LEN);
+
+        if (nf_type != NULL && nf_type->value.len > 0) {
+            ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                          "scp: delegated discovery nf-type=%V uri=%V",
+                          &nf_type->value, &r->uri);
+
+            return NGX_DECLINED;
+        }
+    }
+
+    if (slcf->require_target) {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "scp: no %s and no discovery target",
+                      NGX_HTTP_SCP_TARGET_HEADER);
+
+        return ngx_http_scp_problem(r, NGX_HTTP_BAD_REQUEST, "Bad Request",
+                      "MANDATORY_IE_MISSING",
+                      "neither 3gpp-Sbi-Target-apiRoot nor a discovery "
+                      "target NF type was provided");
     }
 
     return NGX_DECLINED;
@@ -411,6 +450,24 @@ ngx_http_scp_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v,
         return NGX_OK;
     }
 
+    if (data == NGX_HTTP_SCP_VAR_DISCOVERY_NF_TYPE) {
+        ngx_table_elt_t  *h;
+
+        h = ngx_http_scp_find_header(r, (u_char *) NGX_HTTP_SCP_DISC_HEADER,
+                                     NGX_HTTP_SCP_DISC_HEADER_LEN);
+        if (h == NULL || h->value.len == 0) {
+            v->not_found = 1;
+            return NGX_OK;
+        }
+
+        v->valid = 1;
+        v->no_cacheable = 1;
+        v->not_found = 0;
+        v->len = h->value.len;
+        v->data = h->value.data;
+        return NGX_OK;
+    }
+
     ctx = ngx_http_scp_get_ctx(r);
     if (ctx == NULL || !ctx->valid) {
         v->not_found = 1;
@@ -498,6 +555,7 @@ ngx_http_scp_create_loc_conf(ngx_conf_t *cf)
     conf->enable = NGX_CONF_UNSET;
     conf->require_oauth = NGX_CONF_UNSET;
     conf->require_target = NGX_CONF_UNSET;
+    conf->delegated_discovery = NGX_CONF_UNSET;
 
     return conf;
 }
@@ -512,6 +570,8 @@ ngx_http_scp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->enable, prev->enable, 0);
     ngx_conf_merge_value(conf->require_oauth, prev->require_oauth, 0);
     ngx_conf_merge_value(conf->require_target, prev->require_target, 1);
+    ngx_conf_merge_value(conf->delegated_discovery,
+                         prev->delegated_discovery, 0);
 
     return NGX_CONF_OK;
 }
